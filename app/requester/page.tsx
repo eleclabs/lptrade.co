@@ -1,6 +1,5 @@
 import CostCenterSelector from "@/components/CostCenterSelector";
 import DashboardStats from "@/components/DashboardStats";
-import PageHeader from "@/components/PageHeader";
 import ProductCatalog from "@/components/ProductCatalog";
 import RequestForm from "@/components/RequestForm";
 import RequestTable from "@/components/RequestTable";
@@ -17,7 +16,7 @@ type RequesterPageProps = {
 };
 
 export default async function RequesterPage({ searchParams }: RequesterPageProps) {
-  const session = await requireRole(["admin", "requester"]);
+  await requireRole(["admin", "requester"]);
   const params = await searchParams;
   const costCenters = await listMyCostCenters();
   const selectedCostCenter = costCenters.find(
@@ -25,19 +24,11 @@ export default async function RequesterPage({ searchParams }: RequesterPageProps
   );
   const costCenterId = selectedCostCenter?.id;
   const summary = await getDashboardSummary({ costCenterId });
-  const requests = costCenterId
-    ? await listRequests({ costCenterId })
-    : [];
+  const requests = costCenterId ? await listRequests({ costCenterId }) : [];
   const products = costCenterId ? await listActiveProducts() : [];
 
   return (
     <div className="page-shell">
-      <PageHeader
-        eyebrow="Requester"
-        title="คำขอจัดซื้อของฉัน"
-        badge={session.role}
-      />
-
       <CostCenterSelector
         action="/requester"
         costCenters={costCenters}

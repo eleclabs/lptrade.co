@@ -1,5 +1,4 @@
 import Link from "next/link";
-import PageHeader from "@/components/PageHeader";
 import UserForm from "@/components/UserForm";
 import UserTable from "@/components/UserTable";
 import type { Role } from "@/lib/types";
@@ -49,7 +48,7 @@ export default async function AdminUserPage({
 }: {
   searchParams: Promise<{ role?: string | string[]; q?: string | string[] }>;
 }) {
-  const session = await requireRole(["admin"]);
+  await requireRole(["admin"]);
   const params = await searchParams;
   const activeTab = tabFromValue(params.role);
   const query = queryFromValue(params.q);
@@ -57,8 +56,6 @@ export default async function AdminUserPage({
 
   return (
     <div className="page-shell">
-      <PageHeader eyebrow="Admin" title="User" badge={session.role} />
-
       <div className="row g-3">
         <div className="col-sm-12 col-lg-4">
           <UserForm />

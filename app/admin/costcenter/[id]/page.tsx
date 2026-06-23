@@ -1,21 +1,18 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import CostCenterEditForm from "@/components/CostCenterEditForm";
-import PageHeader from "@/components/PageHeader";
 import { requireRole } from "@/services/auth-service";
 import { getCostCenter } from "@/services/eprocurement-service";
 import { listUsersByRole } from "@/services/user-service";
 
 type AdminCostCenterEditPageProps = {
-  params: Promise<{
-    id: string;
-  }>;
+  params: Promise<{ id: string }>;
 };
 
 export default async function AdminCostCenterEditPage({
   params,
 }: AdminCostCenterEditPageProps) {
-  const session = await requireRole(["admin"]);
+  await requireRole(["admin"]);
   const { id } = await params;
   const [costCenter, requesters, approvers] = await Promise.all([
     getCostCenter(id),
@@ -29,7 +26,6 @@ export default async function AdminCostCenterEditPage({
 
   return (
     <div className="page-shell">
-      <PageHeader eyebrow="Admin" title="แก้ไข Cost Center" badge={session.role} />
       <div className="mb-3">
         <Link href="/admin/costcenter" className="btn btn-outline-secondary btn-sm">
           Back to Cost Center

@@ -1,6 +1,5 @@
 import CostCenterSelector from "@/components/CostCenterSelector";
 import DashboardStats from "@/components/DashboardStats";
-import PageHeader from "@/components/PageHeader";
 import RequestTable from "@/components/RequestTable";
 import { requireRole } from "@/services/auth-service";
 import {
@@ -14,7 +13,7 @@ type ApproverPageProps = {
 };
 
 export default async function ApproverPage({ searchParams }: ApproverPageProps) {
-  const session = await requireRole(["admin", "approver"]);
+  await requireRole(["admin", "approver"]);
   const params = await searchParams;
   const costCenters = await listMyCostCenters();
   const selectedCostCenter = costCenters.find(
@@ -28,12 +27,6 @@ export default async function ApproverPage({ searchParams }: ApproverPageProps) 
 
   return (
     <div className="page-shell">
-      <PageHeader
-        eyebrow="Approver"
-        title="รายการรออนุมัติ"
-        badge={session.role}
-      />
-
       <CostCenterSelector
         action="/approver"
         costCenters={costCenters}

@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import OrderDetail from "@/components/OrderDetail";
-import PageHeader from "@/components/PageHeader";
 import { requireRole } from "@/services/auth-service";
 import { getOrder } from "@/services/order-service";
 
@@ -20,7 +19,6 @@ export default async function OrderDetailPage({ params }: OrderDetailPageProps) 
 
   return (
     <div className="page-shell">
-      <PageHeader eyebrow="Order" title={order.orderNo} badge={session.role} />
       <div className="table-actions mb-3">
         <Link href="/order" className="btn btn-outline-secondary btn-sm">
           Back to Order

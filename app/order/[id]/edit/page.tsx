@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import OrderEditForm from "@/components/OrderEditForm";
-import PageHeader from "@/components/PageHeader";
 import { requireRole } from "@/services/auth-service";
 import { getOrder } from "@/services/order-service";
 
@@ -10,7 +9,7 @@ type OrderEditPageProps = {
 };
 
 export default async function OrderEditPage({ params }: OrderEditPageProps) {
-  const session = await requireRole(["admin", "requester"]);
+  await requireRole(["admin", "requester"]);
   const { id } = await params;
   const order = await getOrder(id);
 
@@ -20,7 +19,6 @@ export default async function OrderEditPage({ params }: OrderEditPageProps) {
 
   return (
     <div className="page-shell">
-      <PageHeader eyebrow="Order" title={`Edit ${order.orderNo}`} badge={session.role} />
       <div className="mb-3">
         <Link href={`/order/${order.id}`} className="btn btn-outline-secondary btn-sm">
           Back to Detail
