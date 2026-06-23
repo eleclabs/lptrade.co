@@ -3,7 +3,7 @@ import ProductFormFields from "@/components/ProductFormFields";
 import ProductImageInput from "@/components/ProductImageInput";
 import type { Category } from "@/lib/types";
 
-type CategoryOption = Pick<Category, "id" | "name" | "code">;
+type CategoryOption = Pick<Category, "id" | "name" | "code" | "displayName">;
 
 type ProductFormProps = {
   categories: CategoryOption[];

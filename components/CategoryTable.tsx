@@ -6,6 +6,14 @@ type CategoryTableProps = {
   categories: Category[];
 };
 
+function subCategoryText(category: Category) {
+  if (category.level === 1) {
+    return category.childCount > 0 ? `${category.childCount} หมวดหมู่ย่อย` : "ไม่มี -";
+  }
+
+  return category.parentName ? `อยู่ใต้ ${category.parentName}` : "-";
+}
+
 export default function CategoryTable({ categories }: CategoryTableProps) {
   if (categories.length === 0) {
     return <p className="empty-state">ยังไม่มีหมวดหมู่</p>;
@@ -15,8 +23,10 @@ export default function CategoryTable({ categories }: CategoryTableProps) {
     <table className="table table-hover align-middle">
       <thead>
         <tr>
-          <th>รหัสหมวดหมู่</th>
-          <th>ชื่อหมวดหมู่</th>
+          <th>รหัส</th>
+          <th>หมวดหมู่</th>
+          <th>ชั้น</th>
+          <th>หมวดหมู่ย่อย</th>
           <th>วันที่สร้าง</th>
           <th>จัดการ</th>
         </tr>
@@ -28,7 +38,9 @@ export default function CategoryTable({ categories }: CategoryTableProps) {
           return (
             <tr key={category.id}>
               <td>{category.code}</td>
-              <td>{category.name}</td>
+              <td>{category.displayName}</td>
+              <td>{category.level}</td>
+              <td>{subCategoryText(category)}</td>
               <td>{category.createdAt}</td>
               <td>
                 <form id={deleteFormId} action={deleteCategoryAction}>

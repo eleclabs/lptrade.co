@@ -3,7 +3,10 @@ import { notFound } from "next/navigation";
 import CategoryEditForm from "@/components/CategoryEditForm";
 import PageHeader from "@/components/PageHeader";
 import { requireRole } from "@/services/auth-service";
-import { getCategory } from "@/services/category-service";
+import {
+  getCategory,
+  listParentCategories,
+} from "@/services/category-service";
 
 type AdminCategoryEditPageProps = {
   params: Promise<{
@@ -16,7 +19,10 @@ export default async function AdminCategoryEditPage({
 }: AdminCategoryEditPageProps) {
   const session = await requireRole(["admin"]);
   const { id } = await params;
-  const category = await getCategory(id);
+  const [category, parentCategories] = await Promise.all([
+    getCategory(id),
+    listParentCategories(),
+  ]);
 
   if (!category) {
     notFound();
@@ -33,7 +39,10 @@ export default async function AdminCategoryEditPage({
 
       <div className="row g-4">
         <div className="col-sm-12 col-lg-6">
-          <CategoryEditForm category={category} />
+          <CategoryEditForm
+            category={category}
+            parentCategories={parentCategories}
+          />
         </div>
       </div>
     </div>

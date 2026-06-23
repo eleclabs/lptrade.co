@@ -1,8 +1,13 @@
 import { createRequestAction } from "@/actions/procurement-actions";
 
-export default function RequestForm() {
+type RequestFormProps = {
+  costCenterId: string;
+};
+
+export default function RequestForm({ costCenterId }: RequestFormProps) {
   return (
     <form action={createRequestAction} className="form-panel">
+      <input type="hidden" name="costCenterId" value={costCenterId} />
       <h2>สร้างคำขอจัดซื้อ</h2>
 
       <label htmlFor="title" className="form-label mb-0">

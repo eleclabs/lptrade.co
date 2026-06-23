@@ -2,8 +2,17 @@ import "server-only";
 
 import mongoose from "mongoose";
 import { connectDB } from "@/lib/mongodb";
-import type { Cart, CartItem, Order, OrderItem, OrderStatus } from "@/lib/types";
+import type {
+  Cart,
+  CartItem,
+  Order,
+  OrderItem,
+  OrderStatus,
+  Role,
+  SessionUser,
+} from "@/lib/types";
 import CartModel from "@/models/Cart";
+import CostCenterModel from "@/models/CostCenter";
 import OrderModel from "@/models/Order";
 import ProductModel from "@/models/Product";
 import { requireRole } from "@/services/auth-service";
@@ -18,13 +27,26 @@ type DbCartItem = {
   imageUrl?: string;
 };
 
+type DbCostCenter = {
+  _id: { toString(): string };
+  code: string;
+  name: string;
+  address: string;
+  phone: string;
+  requesterEmail?: string;
+  approverEmail?: string;
+};
+
 type DbCart = {
   _id: { toString(): string };
+  costCenter?: DbCostCenter | { toString(): string } | null;
   items?: DbCartItem[];
   updatedAt?: Date;
 };
 
-type DbOrderItem = DbCartItem;
+type DbOrderItem = DbCartItem & {
+  _id?: { toString(): string };
+};
 
 type DbRequester = {
   _id: { toString(): string };
@@ -36,6 +58,7 @@ type DbOrder = {
   _id: { toString(): string };
   orderNo: string;
   user: DbRequester | string;
+  costCenter?: DbCostCenter | { toString(): string } | null;
   status?: "PENDING" | "PAID" | "CANCELLED";
   items?: DbOrderItem[];
   totalAmount?: number;
@@ -61,6 +84,14 @@ function dateText(date?: Date) {
 
 function lineTotal(item: { price: number; quantity: number }) {
   return item.price * item.quantity;
+}
+
+function dbCostCenter(costCenter?: DbOrder["costCenter"]) {
+  if (!costCenter || typeof costCenter === "string" || !("code" in costCenter)) {
+    return null;
+  }
+
+  return costCenter;
 }
 
 function toCartItemDto(item: DbCartItem): CartItem {
@@ -92,10 +123,14 @@ function toCartDto(cart: DbCart | null): Cart {
     return emptyCart();
   }
 
+  const costCenter = dbCostCenter(cart.costCenter);
   const items = (cart.items ?? []).map(toCartItemDto);
 
   return {
     id: cart._id.toString(),
+    costCenterId: costCenter?._id.toString(),
+    costCenterCode: costCenter?.code,
+    costCenterName: costCenter?.name,
     items,
     itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
     totalAmount: items.reduce((sum, item) => sum + item.lineTotal, 0),
@@ -109,6 +144,12 @@ function normalizeOrderStatus(status?: DbOrder["status"]): OrderStatus {
   return "pending";
 }
 
+function dbOrderStatus(status: string) {
+  if (status === "paid") return "PAID";
+  if (status === "cancelled") return "CANCELLED";
+  return "PENDING";
+}
+
 function requesterId(user: DbOrder["user"]) {
   return typeof user === "string" ? user : user._id.toString();
 }
@@ -119,6 +160,7 @@ function requesterName(user: DbOrder["user"]) {
 
 function toOrderItemDto(item: DbOrderItem): OrderItem {
   return {
+    id: item._id?.toString() ?? item.product.toString(),
     productId: item.product.toString(),
     sku: item.sku,
     name: item.name,
@@ -132,12 +174,20 @@ function toOrderItemDto(item: DbOrderItem): OrderItem {
 
 function toOrderDto(order: DbOrder): Order {
   const items = (order.items ?? []).map(toOrderItemDto);
+  const costCenter = dbCostCenter(order.costCenter);
 
   return {
     id: order._id.toString(),
     orderNo: order.orderNo,
     requesterId: requesterId(order.user),
     requesterName: requesterName(order.user),
+    costCenterId: costCenter?._id.toString() ?? "",
+    costCenterCode: costCenter?.code ?? "",
+    costCenterName: costCenter?.name ?? "",
+    costCenterAddress: costCenter?.address ?? "",
+    costCenterPhone: costCenter?.phone ?? "",
+    requesterEmail: costCenter?.requesterEmail ?? "",
+    approverEmail: costCenter?.approverEmail ?? "",
     status: normalizeOrderStatus(order.status),
     items,
     itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
@@ -165,6 +215,32 @@ function productImageUrl(product: DbProduct) {
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))[0]?.url;
 }
 
+function costCenterScopeFilter(role: Role, email: string) {
+  if (role === "admin") return {};
+  if (role === "approver") return { approverEmail: email };
+  return { requesterEmail: email };
+}
+
+async function findAccessibleCostCenter(
+  session: SessionUser,
+  costCenterId: string,
+) {
+  if (!mongoose.isValidObjectId(costCenterId)) {
+    throw new Error("Cost center is invalid");
+  }
+
+  const costCenter = await CostCenterModel.findOne({
+    _id: costCenterId,
+    ...costCenterScopeFilter(session.role, session.email),
+  }).lean<DbCostCenter | null>();
+
+  if (!costCenter) {
+    throw new Error("Cost center is invalid");
+  }
+
+  return costCenter;
+}
+
 async function findActiveProduct(productId: string) {
   if (!mongoose.isValidObjectId(productId)) {
     throw new Error("Product id is invalid");
@@ -182,11 +258,37 @@ async function findActiveProduct(productId: string) {
   return product;
 }
 
+function orderAccessFilter(session: SessionUser) {
+  if (session.role === "admin") {
+    return {};
+  }
+
+  if (session.role === "approver") {
+    return {};
+  }
+
+  return { user: session.id };
+}
+
+async function ensureApproverOrderAccess(session: SessionUser, order: DbOrder) {
+  if (session.role !== "approver") {
+    return;
+  }
+
+  const costCenter = dbCostCenter(order.costCenter);
+
+  if (!costCenter || costCenter.approverEmail !== session.email) {
+    throw new Error("Order was not found");
+  }
+}
+
 export async function getCart() {
   const session = await requireRole(["admin", "requester"]);
   await connectDB();
 
-  const cart = await CartModel.findOne({ user: session.id }).lean<DbCart | null>();
+  const cart = await CartModel.findOne({ user: session.id })
+    .populate("costCenter", "code name address phone requesterEmail approverEmail")
+    .lean<DbCart | null>();
 
   return toCartDto(cart);
 }
@@ -196,7 +298,9 @@ export async function addToCart(formData: FormData) {
   await connectDB();
 
   const productId = String(formData.get("productId") ?? "");
+  const costCenterId = String(formData.get("costCenterId") ?? "");
   const quantity = quantityFromForm(formData);
+  await findAccessibleCostCenter(session, costCenterId);
   const product = await findActiveProduct(productId);
 
   if (product.stock < quantity) {
@@ -217,9 +321,15 @@ export async function addToCart(formData: FormData) {
   if (!cart) {
     await CartModel.create({
       user: session.id,
+      costCenter: costCenterId,
       items: [nextItem],
     });
     return;
+  }
+
+  if (cart.costCenter?.toString() !== costCenterId) {
+    cart.costCenter = costCenterId;
+    cart.items = [];
   }
 
   const item = cart.items.find(
@@ -287,7 +397,10 @@ export async function clearCart() {
   const session = await requireRole(["admin", "requester"]);
   await connectDB();
 
-  await CartModel.updateOne({ user: session.id }, { $set: { items: [] } });
+  await CartModel.updateOne(
+    { user: session.id },
+    { $set: { items: [], costCenter: null } },
+  );
 }
 
 export async function checkoutCart(formData: FormData) {
@@ -296,6 +409,8 @@ export async function checkoutCart(formData: FormData) {
 
   const cart = await CartModel.findOne({ user: session.id }).lean<DbCart | null>();
   const items = cart?.items ?? [];
+  const costCenterId = cart?.costCenter?.toString() ?? "";
+  const costCenter = await findAccessibleCostCenter(session, costCenterId);
 
   if (items.length === 0) {
     throw new Error("Cart is empty");
@@ -336,6 +451,7 @@ export async function checkoutCart(formData: FormData) {
   await OrderModel.create({
     orderNo: `OD-${Date.now()}`,
     user: session.id,
+    costCenter: costCenter._id,
     status: "PENDING",
     items: orderItems,
     totalAmount,
@@ -356,18 +472,160 @@ export async function checkoutCart(formData: FormData) {
     })),
   );
 
-  await CartModel.updateOne({ user: session.id }, { $set: { items: [] } });
+  await CartModel.updateOne(
+    { user: session.id },
+    { $set: { items: [], costCenter: null } },
+  );
 }
 
 export async function listOrders() {
-  const session = await requireRole(["admin", "requester"]);
+  const session = await requireRole(["admin", "approver", "requester"]);
   await connectDB();
 
-  const filter = session.role === "admin" ? {} : { user: session.id };
-  const orders = await OrderModel.find(filter)
+  const orders = await OrderModel.find(orderAccessFilter(session))
     .populate("user", "name email")
+    .populate("costCenter", "code name address phone requesterEmail approverEmail")
     .sort({ createdAt: -1 })
     .lean<DbOrder[]>();
 
-  return orders.map(toOrderDto);
+  const visibleOrders =
+    session.role === "approver"
+      ? orders.filter((order) => dbCostCenter(order.costCenter)?.approverEmail === session.email)
+      : orders;
+
+  return visibleOrders.map(toOrderDto);
+}
+
+export async function getOrder(id: string) {
+  const session = await requireRole(["admin", "approver", "requester"]);
+  await connectDB();
+
+  if (!mongoose.isValidObjectId(id)) {
+    return null;
+  }
+
+  const order = await OrderModel.findOne({
+    _id: id,
+    ...orderAccessFilter(session),
+  })
+    .populate("user", "name email")
+    .populate("costCenter", "code name address phone requesterEmail approverEmail")
+    .lean<DbOrder | null>();
+
+  if (!order) {
+    return null;
+  }
+
+  await ensureApproverOrderAccess(session, order);
+
+  return toOrderDto(order);
+}
+
+export async function updateOrder(formData: FormData) {
+  const session = await requireRole(["admin", "requester"]);
+  await connectDB();
+
+  const id = String(formData.get("id") ?? "");
+
+  if (!mongoose.isValidObjectId(id)) {
+    throw new Error("Order id is invalid");
+  }
+
+  const order = await OrderModel.findOne({
+    _id: id,
+    ...orderAccessFilter(session),
+  });
+
+  if (!order || order.status === "PAID") {
+    throw new Error("Order cannot be updated");
+  }
+
+  const bulkUpdates = [];
+
+  for (const item of order.items as DbOrderItem[]) {
+    const itemId = item._id?.toString() ?? "";
+    const nextQuantity = Number(formData.get(`quantity-${itemId}`) ?? item.quantity);
+
+    if (!Number.isInteger(nextQuantity) || nextQuantity < 1) {
+      throw new Error("Order quantity is invalid");
+    }
+
+    const product = await ProductModel.findById(item.product).lean<DbProduct | null>();
+
+    if (!product) {
+      throw new Error("Product was not found");
+    }
+
+    const availableQuantity = product.stock + item.quantity;
+
+    if (nextQuantity > availableQuantity) {
+      throw new Error(`${item.name} stock is not enough`);
+    }
+
+    const delta = nextQuantity - item.quantity;
+
+    if (delta !== 0) {
+      bulkUpdates.push({
+        updateOne: {
+          filter: { _id: item.product },
+          update: {
+            $inc: {
+              stock: -delta,
+              soldCount: delta,
+            },
+          },
+        },
+      });
+    }
+
+    item.quantity = nextQuantity;
+  }
+
+  if (bulkUpdates.length > 0) {
+    await ProductModel.bulkWrite(bulkUpdates);
+  }
+
+  order.note = String(formData.get("note") ?? "").trim();
+  order.status = dbOrderStatus(String(formData.get("status") ?? "pending"));
+  order.totalAmount = (order.items as DbOrderItem[]).reduce(
+    (sum, item) => sum + lineTotal(item),
+    0,
+  );
+  await order.save();
+}
+
+export async function deleteOrder(formData: FormData) {
+  const session = await requireRole(["admin", "requester"]);
+  await connectDB();
+
+  const id = String(formData.get("id") ?? "");
+
+  if (!mongoose.isValidObjectId(id)) {
+    throw new Error("Order id is invalid");
+  }
+
+  const order = await OrderModel.findOne({
+    _id: id,
+    ...orderAccessFilter(session),
+  });
+
+  if (!order || order.status === "PAID") {
+    throw new Error("Order cannot be deleted");
+  }
+
+  await ProductModel.bulkWrite(
+    (order.items as DbOrderItem[]).map((item) => ({
+      updateOne: {
+        filter: { _id: item.product },
+        update: {
+          $inc: {
+            stock: item.quantity,
+            soldCount: -item.quantity,
+          },
+        },
+      },
+    })),
+  );
+
+  await OrderModel.findByIdAndDelete(id);
 }

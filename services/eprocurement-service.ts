@@ -15,6 +15,7 @@ import { requireRole, requireSession } from "@/services/auth-service";
 
 type DbApprover = {
   _id: { toString(): string };
+  email?: string;
   role?: "Admin" | "Approver" | "Requester" | Role;
 };
 
@@ -30,6 +31,7 @@ type DbRequest = {
   department?: string;
   requester?: { toString(): string };
   approver?: { toString(): string };
+  costCenter?: DbCostCenter | { toString(): string };
   status?: "DRAFT" | "SUBMITTED" | "APPROVED" | "REJECTED" | "PURCHASED" | "CANCELLED";
   totalAmount?: number;
   createdAt?: Date;
@@ -65,6 +67,11 @@ function normalizeStatus(status?: DbRequest["status"]): ProcurementStatus {
 }
 
 function toRequestDto(request: DbRequest): ProcurementRequest {
+  const costCenter =
+    request.costCenter && typeof request.costCenter !== "string" && "code" in request.costCenter
+      ? request.costCenter
+      : null;
+
   return {
     id: request.requestNo ?? request._id.toString(),
     title: request.title,
@@ -72,6 +79,9 @@ function toRequestDto(request: DbRequest): ProcurementRequest {
     amount: request.totalAmount ?? 0,
     requesterId: request.requester?.toString() ?? "",
     approverId: request.approver?.toString(),
+    costCenterId: costCenter?._id.toString(),
+    costCenterCode: costCenter?.code,
+    costCenterName: costCenter?.name,
     status: normalizeStatus(request.status),
     createdAt: dateText(request.createdAt),
     updatedAt: dateText(request.updatedAt),
@@ -107,12 +117,92 @@ function requestFilter(role: Role, userId: string) {
   return { requester: userId };
 }
 
-export async function getDashboardSummary() {
+function costCenterScopeFilter(role: Role, email: string) {
+  if (role === "admin") return {};
+  if (role === "approver") return { approverEmail: email };
+  return { requesterEmail: email };
+}
+
+async function costCenterIdsForSession(role: Role, email: string) {
+  if (role === "admin") {
+    return undefined;
+  }
+
+  const costCenters = await CostCenterModel.find(costCenterScopeFilter(role, email))
+    .select("_id")
+    .lean<Array<{ _id: { toString(): string } }>>();
+
+  return costCenters.map((costCenter) => costCenter._id.toString());
+}
+
+export async function listMyCostCenters() {
   const session = await requireSession();
   await connectDB();
 
-  const filter = requestFilter(session.role, session.id);
-  const requests = await PurchaseRequest.find(filter).lean<DbRequest[]>();
+  const costCenters = await CostCenterModel.find(
+    costCenterScopeFilter(session.role, session.email),
+  )
+    .sort({ code: 1 })
+    .lean<DbCostCenter[]>();
+
+  const users = await User.find({
+    email: {
+      $in: Array.from(
+        new Set(
+          costCenters.flatMap((costCenter) => [
+            costCenter.requesterEmail,
+            costCenter.approverEmail,
+          ]),
+        ),
+      ),
+    },
+  }).lean<DbUserEmail[]>();
+  const userNameByEmail = new Map(
+    users.map((user) => [user.email, user.name ?? user.email]),
+  );
+
+  return costCenters.map((costCenter) =>
+    toCostCenterDto(costCenter, userNameByEmail),
+  );
+}
+
+export async function getSelectableCostCenter(id: string) {
+  const session = await requireSession();
+  await connectDB();
+
+  if (!mongoose.isValidObjectId(id)) {
+    return null;
+  }
+
+  const filter = {
+    _id: id,
+    ...costCenterScopeFilter(session.role, session.email),
+  };
+  const costCenter = await CostCenterModel.findOne(filter).lean<DbCostCenter | null>();
+
+  if (!costCenter) {
+    return null;
+  }
+
+  return toCostCenterDto(costCenter);
+}
+
+export async function getDashboardSummary(options?: { costCenterId?: string }) {
+  const session = await requireSession();
+  await connectDB();
+
+  const scopedCostCenterIds = await costCenterIdsForSession(
+    session.role,
+    session.email,
+  );
+  const filter = {
+    ...requestFilter(session.role, session.id),
+    ...(scopedCostCenterIds ? { costCenter: { $in: scopedCostCenterIds } } : {}),
+    ...(options?.costCenterId ? { costCenter: options.costCenterId } : {}),
+  };
+  const requests = await PurchaseRequest.find(filter)
+    .populate("costCenter", "code name")
+    .lean<DbRequest[]>();
   const visibleRequests = requests.map(toRequestDto);
 
   return {
@@ -124,13 +214,19 @@ export async function getDashboardSummary() {
   };
 }
 
-export async function listRequests(options?: { query?: string }) {
+export async function listRequests(options?: { query?: string; costCenterId?: string }) {
   const session = await requireSession();
   await connectDB();
 
   const query = options?.query?.trim() ?? "";
+  const scopedCostCenterIds = await costCenterIdsForSession(
+    session.role,
+    session.email,
+  );
   const filter = {
     ...requestFilter(session.role, session.id),
+    ...(scopedCostCenterIds ? { costCenter: { $in: scopedCostCenterIds } } : {}),
+    ...(options?.costCenterId ? { costCenter: options.costCenterId } : {}),
     ...(query
       ? {
           $or: [
@@ -143,17 +239,27 @@ export async function listRequests(options?: { query?: string }) {
   };
 
   const requests = await PurchaseRequest.find(filter)
+    .populate("costCenter", "code name")
     .sort({ updatedAt: -1 })
     .lean<DbRequest[]>();
 
   return requests.map(toRequestDto);
 }
 
-export async function listPendingApprovals() {
-  await requireRole(["admin", "approver"]);
+export async function listPendingApprovals(options?: { costCenterId?: string }) {
+  const session = await requireRole(["admin", "approver"]);
   await connectDB();
 
-  const requests = await PurchaseRequest.find({ status: "SUBMITTED" })
+  const scopedCostCenterIds = await costCenterIdsForSession(
+    session.role,
+    session.email,
+  );
+  const requests = await PurchaseRequest.find({
+    status: "SUBMITTED",
+    ...(scopedCostCenterIds ? { costCenter: { $in: scopedCostCenterIds } } : {}),
+    ...(options?.costCenterId ? { costCenter: options.costCenterId } : {}),
+  })
+    .populate("costCenter", "code name")
     .sort({ updatedAt: -1 })
     .lean<DbRequest[]>();
 
@@ -351,12 +457,29 @@ export async function createRequest(formData: FormData) {
   const title = String(formData.get("title") ?? "").trim();
   const department = String(formData.get("department") ?? "").trim();
   const amount = Number(formData.get("amount") ?? 0);
+  const costCenterId = String(formData.get("costCenterId") ?? "");
 
-  if (!title || !department || Number.isNaN(amount) || amount <= 0) {
+  if (
+    !title ||
+    !department ||
+    Number.isNaN(amount) ||
+    amount <= 0 ||
+    !mongoose.isValidObjectId(costCenterId)
+  ) {
     throw new Error("Purchase request data is incomplete");
   }
 
+  const costCenter = await CostCenterModel.findOne({
+    _id: costCenterId,
+    ...costCenterScopeFilter(session.role, session.email),
+  }).lean<DbCostCenter | null>();
+
+  if (!costCenter) {
+    throw new Error("Cost center is invalid");
+  }
+
   const approver = await User.findOne({
+    email: costCenter.approverEmail,
     role: dbRole("approver"),
     active: { $ne: false },
   }).lean<DbApprover | null>();
@@ -365,6 +488,7 @@ export async function createRequest(formData: FormData) {
     requestNo: `PR-${Date.now()}`,
     title,
     department,
+    costCenter: costCenter._id,
     requester: session.id,
     approver: approver?._id,
     status: "SUBMITTED",
@@ -377,7 +501,15 @@ export async function approveRequest(formData: FormData) {
   await connectDB();
 
   const requestNo = String(formData.get("requestId") ?? "");
-  const request = await PurchaseRequest.findOne({ requestNo, status: "SUBMITTED" });
+  const scopedCostCenterIds = await costCenterIdsForSession(
+    session.role,
+    session.email,
+  );
+  const request = await PurchaseRequest.findOne({
+    requestNo,
+    status: "SUBMITTED",
+    ...(scopedCostCenterIds ? { costCenter: { $in: scopedCostCenterIds } } : {}),
+  });
 
   if (!request) {
     throw new Error("Pending purchase request was not found");
@@ -394,7 +526,15 @@ export async function rejectRequest(formData: FormData) {
   await connectDB();
 
   const requestNo = String(formData.get("requestId") ?? "");
-  const request = await PurchaseRequest.findOne({ requestNo, status: "SUBMITTED" });
+  const scopedCostCenterIds = await costCenterIdsForSession(
+    session.role,
+    session.email,
+  );
+  const request = await PurchaseRequest.findOne({
+    requestNo,
+    status: "SUBMITTED",
+    ...(scopedCostCenterIds ? { costCenter: { $in: scopedCostCenterIds } } : {}),
+  });
 
   if (!request) {
     throw new Error("Pending purchase request was not found");

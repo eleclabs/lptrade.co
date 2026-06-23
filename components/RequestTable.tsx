@@ -24,6 +24,7 @@ export default function RequestTable({
           <th>เลขที่</th>
           <th>รายการ</th>
           <th>แผนก</th>
+          <th>Cost Center</th>
           <th>งบประมาณ</th>
           <th>สถานะ</th>
           <th>วันที่</th>
@@ -36,6 +37,11 @@ export default function RequestTable({
             <td>{request.id}</td>
             <td>{request.title}</td>
             <td>{request.department}</td>
+            <td>
+              {request.costCenterCode
+                ? `${request.costCenterCode} - ${request.costCenterName}`
+                : "-"}
+            </td>
             <td>{request.amount.toLocaleString("th-TH")}</td>
             <td>
               <span className={`status status-${request.status}`}>

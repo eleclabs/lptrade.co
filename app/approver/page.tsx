@@ -1,36 +1,60 @@
+import CostCenterSelector from "@/components/CostCenterSelector";
 import DashboardStats from "@/components/DashboardStats";
 import PageHeader from "@/components/PageHeader";
 import RequestTable from "@/components/RequestTable";
 import { requireRole } from "@/services/auth-service";
 import {
   getDashboardSummary,
+  listMyCostCenters,
   listPendingApprovals,
 } from "@/services/eprocurement-service";
 
-export default async function ApproverPage() {
-  await requireRole(["admin", "approver"]);
-  const summary = await getDashboardSummary();
-  const requests = await listPendingApprovals();
+type ApproverPageProps = {
+  searchParams?: Promise<{ costCenterId?: string }>;
+};
+
+export default async function ApproverPage({ searchParams }: ApproverPageProps) {
+  const session = await requireRole(["admin", "approver"]);
+  const params = await searchParams;
+  const costCenters = await listMyCostCenters();
+  const selectedCostCenter = costCenters.find(
+    (costCenter) => costCenter.id === params?.costCenterId,
+  );
+  const costCenterId = selectedCostCenter?.id;
+  const summary = await getDashboardSummary({ costCenterId });
+  const requests = costCenterId
+    ? await listPendingApprovals({ costCenterId })
+    : [];
 
   return (
     <div className="page-shell">
       <PageHeader
         eyebrow="Approver"
         title="รายการรออนุมัติ"
-        badge={summary.user.role}
+        badge={session.role}
       />
 
-      <DashboardStats
-        total={summary.total}
-        pending={summary.pending}
-        approved={summary.approved}
-        rejected={summary.rejected}
+      <CostCenterSelector
+        action="/approver"
+        costCenters={costCenters}
+        selectedId={costCenterId}
       />
 
-      <section className="content-panel">
-        <h2>รายการที่ต้องดำเนินการ</h2>
-        <RequestTable requests={requests} showActions />
-      </section>
+      {costCenterId ? (
+        <>
+          <DashboardStats
+            total={summary.total}
+            pending={summary.pending}
+            approved={summary.approved}
+            rejected={summary.rejected}
+          />
+
+          <section className="content-panel">
+            <h2>รายการที่ต้องดำเนินการ</h2>
+            <RequestTable requests={requests} showActions />
+          </section>
+        </>
+      ) : null}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import type { Product } from "@/lib/types";
 
 type ProductCatalogProps = {
   products: Product[];
+  costCenterId?: string;
 };
 
 function formatPrice(value: number) {
@@ -13,7 +14,10 @@ function formatPrice(value: number) {
   });
 }
 
-export default function ProductCatalog({ products }: ProductCatalogProps) {
+export default function ProductCatalog({
+  products,
+  costCenterId,
+}: ProductCatalogProps) {
   if (products.length === 0) {
     return <p className="empty-state">ยังไม่มีสินค้าพร้อมขาย</p>;
   }
@@ -53,6 +57,9 @@ export default function ProductCatalog({ products }: ProductCatalogProps) {
 
               <form action={addToCartAction} className="product-card-action">
                 <input type="hidden" name="productId" value={product.id} />
+                {costCenterId ? (
+                  <input type="hidden" name="costCenterId" value={costCenterId} />
+                ) : null}
                 <input
                   aria-label={`จำนวน ${product.name}`}
                   className="form-control form-control-sm"

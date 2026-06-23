@@ -19,6 +19,9 @@ export type ProcurementRequest = {
   amount: number;
   requesterId: string;
   approverId?: string;
+  costCenterId?: string;
+  costCenterCode?: string;
+  costCenterName?: string;
   status: ProcurementStatus;
   createdAt: string;
   updatedAt: string;
@@ -28,6 +31,12 @@ export type Category = {
   id: string;
   code: string;
   name: string;
+  parentId?: string;
+  parentCode?: string;
+  parentName?: string;
+  level: number;
+  childCount: number;
+  displayName: string;
   createdAt: string;
 };
 
@@ -75,6 +84,9 @@ export type CartItem = {
 
 export type Cart = {
   id: string;
+  costCenterId?: string;
+  costCenterCode?: string;
+  costCenterName?: string;
   items: CartItem[];
   itemCount: number;
   totalAmount: number;
@@ -84,6 +96,7 @@ export type Cart = {
 export type OrderStatus = "pending" | "paid" | "cancelled";
 
 export type OrderItem = {
+  id: string;
   productId: string;
   sku: string;
   name: string;
@@ -99,6 +112,13 @@ export type Order = {
   orderNo: string;
   requesterId: string;
   requesterName: string;
+  costCenterId: string;
+  costCenterCode: string;
+  costCenterName: string;
+  costCenterAddress: string;
+  costCenterPhone: string;
+  requesterEmail: string;
+  approverEmail: string;
   status: OrderStatus;
   items: OrderItem[];
   itemCount: number;

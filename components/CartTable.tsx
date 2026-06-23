@@ -94,6 +94,14 @@ export default function CartTable({ cart }: CartTableProps) {
       <aside className="form-panel cart-summary">
         <h2>สรุป Order</h2>
         <div className="summary-row">
+          <span>Cost Center</span>
+          <strong>
+            {cart.costCenterCode
+              ? `${cart.costCenterCode} ${cart.costCenterName}`
+              : "-"}
+          </strong>
+        </div>
+        <div className="summary-row">
           <span>จำนวนสินค้า</span>
           <strong>{cart.itemCount}</strong>
         </div>

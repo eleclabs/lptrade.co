@@ -6,7 +6,9 @@ import {
   addToCart,
   checkoutCart,
   clearCart,
+  deleteOrder,
   removeCartItem,
+  updateOrder,
   updateCartItem,
 } from "@/services/order-service";
 
@@ -37,4 +39,17 @@ export async function checkoutCartAction(formData: FormData) {
   revalidatePath("/order");
   revalidatePath("/requester");
   redirect("/order");
+}
+
+export async function updateOrderAction(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  await updateOrder(formData);
+  revalidatePath("/order");
+  revalidatePath(`/order/${id}`);
+  redirect(`/order/${id}`);
+}
+
+export async function deleteOrderAction(formData: FormData) {
+  await deleteOrder(formData);
+  revalidatePath("/order");
 }

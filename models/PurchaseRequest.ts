@@ -16,6 +16,11 @@ const PurchaseRequestSchema = new Schema(
     department: String,
     reason: String,
 
+    costCenter: {
+      type: Schema.Types.ObjectId,
+      ref: "CostCenter",
+    },
+
     requester: {
       type: Schema.Types.ObjectId,
       ref: "User",

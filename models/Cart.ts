@@ -25,6 +25,11 @@ const CartSchema = new Schema(
       required: true,
       unique: true,
     },
+    costCenter: {
+      type: Schema.Types.ObjectId,
+      ref: "CostCenter",
+      default: null,
+    },
     items: {
       type: [CartItemSchema],
       default: [],

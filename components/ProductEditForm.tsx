@@ -3,7 +3,7 @@ import ProductExistingImages from "@/components/ProductExistingImages";
 import ProductFormFields from "@/components/ProductFormFields";
 import type { Category, Product } from "@/lib/types";
 
-type CategoryOption = Pick<Category, "id" | "name" | "code">;
+type CategoryOption = Pick<Category, "id" | "name" | "code" | "displayName">;
 
 type ProductEditFormProps = {
   product: Product;

@@ -14,7 +14,7 @@ const OrderItemSchema = new Schema(
     unit: { type: String, default: "", trim: true },
     imageUrl: { type: String, default: "" },
   },
-  { _id: false },
+  { _id: true },
 );
 
 const OrderSchema = new Schema(
@@ -23,6 +23,11 @@ const OrderSchema = new Schema(
     user: {
       type: Schema.Types.ObjectId,
       ref: "User",
+      required: true,
+    },
+    costCenter: {
+      type: Schema.Types.ObjectId,
+      ref: "CostCenter",
       required: true,
     },
     status: {

@@ -1,6 +1,6 @@
 import type { Category, Product, ProductStatus } from "@/lib/types";
 
-type CategoryOption = Pick<Category, "id" | "name" | "code">;
+type CategoryOption = Pick<Category, "id" | "name" | "code" | "displayName">;
 
 const statuses: Array<{ value: ProductStatus; label: string }> = [
   { value: "active", label: "วางขาย" },
@@ -54,7 +54,7 @@ export default function ProductFormFields({
         <option value="">เลือกหมวดหมู่</option>
         {categories.map((category) => (
           <option key={category.id} value={category.id}>
-            {category.name} ({category.code})
+            {category.displayName} ({category.code})
           </option>
         ))}
       </select>

@@ -16,6 +16,8 @@ import { requireRole } from "@/services/auth-service";
 type DbCategoryRef = {
   _id: { toString(): string };
   name: string;
+  code?: string;
+  parent?: DbCategoryRef | string | null;
 };
 
 type DbProductImage = {
@@ -54,7 +56,12 @@ function categoryName(category: DbProduct["category"]) {
     return "";
   }
 
-  return category.name ?? "";
+  const parent =
+    category.parent && typeof category.parent !== "string"
+      ? category.parent
+      : null;
+
+  return parent ? `${parent.name} / ${category.name}` : category.name ?? "";
 }
 
 function categoryId(category: DbProduct["category"]) {
@@ -229,7 +236,7 @@ export async function listProducts(options?: { query?: string }) {
     : {};
 
   const products = await ProductModel.find(filter)
-    .populate("category", "name")
+    .populate({ path: "category", select: "name code parent", populate: { path: "parent", select: "name code" } })
     .sort({ updatedAt: -1 })
     .lean<DbProduct[]>();
 
@@ -244,7 +251,7 @@ export async function listActiveProducts() {
     status: "active",
     stock: { $gt: 0 },
   })
-    .populate("category", "name")
+    .populate({ path: "category", select: "name code parent", populate: { path: "parent", select: "name code" } })
     .sort({ updatedAt: -1 })
     .lean<DbProduct[]>();
 
@@ -260,7 +267,7 @@ export async function getProduct(id: string) {
   }
 
   const product = await ProductModel.findById(id)
-    .populate("category", "name")
+    .populate({ path: "category", select: "name code parent", populate: { path: "parent", select: "name code" } })
     .lean<DbProduct | null>();
 
   if (!product) {
