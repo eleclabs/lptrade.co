@@ -6,6 +6,9 @@ const UserSchema = new Schema(
     name: String,
     email: { type: String, required: true, unique: true },
     password: String,
+    phone: { type: String, default: "" },
+    resetPasswordToken: String,
+    resetPasswordExpires: Date,
     role: {
       type: String,
       enum: ["Admin", "Approver", "Requester"],

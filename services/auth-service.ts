@@ -1,6 +1,7 @@
 import "server-only";
 
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import mongoose from "mongoose";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -33,8 +34,11 @@ type DbUser = {
   name?: string;
   email: string;
   password?: string;
+  phone?: string;
   role?: "Admin" | "Approver" | "Requester" | Role;
   active?: boolean;
+  resetPasswordToken?: string;
+  resetPasswordExpires?: Date;
 };
 
 function normalizeRole(role?: DbUser["role"]): Role {
@@ -64,11 +68,36 @@ async function verifyPassword(inputPassword: string, storedPassword?: string) {
   return bcrypt.compare(inputPassword, storedPassword);
 }
 
+function dbRole(role: Role) {
+  if (role === "admin") return "Admin";
+  if (role === "approver") return "Approver";
+  return "Requester";
+}
+
+function normalizeEmail(email: string) {
+  return email.trim().toLowerCase();
+}
+
+function passwordIsValid(password: string) {
+  return password.length >= 6;
+}
+
+async function setSessionCookie(userId: string) {
+  const cookieStore = await cookies();
+  cookieStore.set(SESSION_COOKIE, userId, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 60 * 60 * 8,
+  });
+}
+
 export async function login(email: string, password: string) {
   await connectDB();
 
   const user = await User.findOne({
-    email: email.trim(),
+    email: normalizeEmail(email),
     active: { $ne: false },
   }).lean<DbUser | null>();
 
@@ -76,16 +105,42 @@ export async function login(email: string, password: string) {
     return { ok: false, message: "Invalid email or password" };
   }
 
-  const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, user._id.toString(), {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 60 * 60 * 8,
-  });
+  await setSessionCookie(user._id.toString());
 
   return { ok: true, message: "Login success" };
+}
+
+export async function register(formData: FormData) {
+  await connectDB();
+
+  const name = String(formData.get("name") ?? "").trim();
+  const email = normalizeEmail(String(formData.get("email") ?? ""));
+  const password = String(formData.get("password") ?? "");
+  const confirmPassword = String(formData.get("confirmPassword") ?? "");
+  const phone = String(formData.get("phone") ?? "").trim();
+
+  if (!name || !email || !passwordIsValid(password) || password !== confirmPassword) {
+    return { ok: false, message: "Register data is invalid" };
+  }
+
+  const existing = await User.findOne({ email }).lean<DbUser | null>();
+
+  if (existing) {
+    return { ok: false, message: "Email is already registered" };
+  }
+
+  const user = await User.create({
+    name,
+    email,
+    password: await bcrypt.hash(password, 10),
+    phone,
+    role: dbRole("requester"),
+    active: true,
+  });
+
+  await setSessionCookie(user._id.toString());
+
+  return { ok: true, message: "Register success" };
 }
 
 export async function logout() {
@@ -134,6 +189,125 @@ export async function requireRole(roles: Role[]) {
   }
 
   return session;
+}
+
+export async function getProfile() {
+  const session = await requireSession();
+  await connectDB();
+
+  const user = await User.findById(session.id).lean<DbUser | null>();
+
+  if (!user || user.active === false) {
+    redirect("/login");
+  }
+
+  return {
+    id: user._id.toString(),
+    name: user.name ?? user.email,
+    email: user.email,
+    phone: user.phone ?? "",
+    role: normalizeRole(user.role),
+  };
+}
+
+export async function updateProfile(formData: FormData) {
+  const session = await requireSession();
+  await connectDB();
+
+  const name = String(formData.get("name") ?? "").trim();
+  const phone = String(formData.get("phone") ?? "").trim();
+  const currentPassword = String(formData.get("currentPassword") ?? "");
+  const newPassword = String(formData.get("newPassword") ?? "");
+  const confirmPassword = String(formData.get("confirmPassword") ?? "");
+
+  if (!name) {
+    return { ok: false, message: "Name is required" };
+  }
+
+  const user = await User.findById(session.id);
+
+  if (!user || user.active === false) {
+    return { ok: false, message: "User was not found" };
+  }
+
+  user.name = name;
+  user.phone = phone;
+
+  if (currentPassword || newPassword || confirmPassword) {
+    if (
+      !passwordIsValid(newPassword) ||
+      newPassword !== confirmPassword ||
+      !(await verifyPassword(currentPassword, user.password))
+    ) {
+      return { ok: false, message: "Password data is invalid" };
+    }
+
+    user.password = await bcrypt.hash(newPassword, 10);
+  }
+
+  await user.save();
+
+  return { ok: true, message: "Profile updated" };
+}
+
+export async function createPasswordReset(emailInput: string) {
+  await connectDB();
+
+  const email = normalizeEmail(emailInput);
+  const user = await User.findOne({
+    email,
+    active: { $ne: false },
+  });
+
+  if (!user) {
+    return {
+      ok: true,
+      token: "",
+      message: "If the email exists, a reset link was created",
+    };
+  }
+
+  const token = crypto.randomBytes(32).toString("hex");
+  user.resetPasswordToken = crypto.createHash("sha256").update(token).digest("hex");
+  user.resetPasswordExpires = new Date(Date.now() + 1000 * 60 * 30);
+  await user.save();
+
+  return {
+    ok: true,
+    token,
+    message: "Password reset link was created",
+  };
+}
+
+export async function resetPassword(formData: FormData) {
+  await connectDB();
+
+  const token = String(formData.get("token") ?? "");
+  const password = String(formData.get("password") ?? "");
+  const confirmPassword = String(formData.get("confirmPassword") ?? "");
+
+  if (!token || !passwordIsValid(password) || password !== confirmPassword) {
+    return { ok: false, message: "Password reset data is invalid" };
+  }
+
+  const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+  const user = await User.findOne({
+    resetPasswordToken: hashedToken,
+    resetPasswordExpires: { $gt: new Date() },
+    active: { $ne: false },
+  });
+
+  if (!user) {
+    return { ok: false, message: "Reset link is invalid or expired" };
+  }
+
+  user.password = await bcrypt.hash(password, 10);
+  user.resetPasswordToken = undefined;
+  user.resetPasswordExpires = undefined;
+  await user.save();
+  await setSessionCookie(user._id.toString());
+
+  return { ok: true, message: "Password reset success" };
 }
 
 export function getMenuByRole(role?: Role) {

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { loginAction } from "@/actions/auth-actions";
 
 type LoginFormProps = {
@@ -34,7 +35,10 @@ export default function LoginForm({ hasError }: LoginFormProps) {
         Login
       </button>
 
-      <p className="form-help">ใช้บัญชีผู้ใช้งานจาก MongoDB เท่านั้น</p>
+      <div className="auth-links">
+        <Link href="/register">Register</Link>
+        <Link href="/forgot-password">Forgot Password</Link>
+      </div>
     </form>
   );
 }

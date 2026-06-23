@@ -40,6 +40,9 @@ export default async function Navbar() {
                 <span className="small text-secondary d-none d-md-inline">
                   {session.name}
                 </span>
+                <Link href="/profile" className="btn btn-outline-primary btn-sm">
+                  Profile
+                </Link>
                 <form action={logoutAction}>
                   <button type="submit" className="btn btn-outline-dark btn-sm">
                     ออก
